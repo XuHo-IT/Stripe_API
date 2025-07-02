@@ -1,0 +1,27 @@
+# Ignore Visual Studio folders
+.vs/
+
+
+# Ignore build output
+**/bin/
+**/obj/
+
+
+
+.vscode/*
+
+!.vscode/extensions.json
+
+.idea
+
+*.suo
+
+*.ntvs*
+
+*.njsproj
+
+*.sw?
+
+*.tsbuildinfo
+
+key_secret.json
