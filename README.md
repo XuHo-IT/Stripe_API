@@ -8,7 +8,7 @@ To get started, first clone this repository to your local machine:
 git clone https://github.com/your-username/StripePaymentCSharp.git
 cd StripePaymentCSharp
 ```
-You’ll need a Stripe secret key, which you can generate or find in your Stripe Dashboard. Once you have your key, you have two options for how to store it:
+You’ll need a Stripe secret key, which you can generate or find in your Stripe Dashboard. Once you have your key:
 
 Using a local file:
 Create a key_secret.json file in the root of your project (alongside your .csproj file). This file should contain your secret key in the following format:
