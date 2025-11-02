@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Stripe;
 using Stripe.Checkout;
+using Stripe.Climate;
 using StripePayment.Key;
 
 namespace StripePayment.Controllers
@@ -9,6 +10,8 @@ namespace StripePayment.Controllers
     [Route("api/[controller]")]
     public class StripeController : ControllerBase
     {
+        private readonly FakeOrderService _orderService = new FakeOrderService();
+
         [HttpPost("create-checkout-session")]
         public IActionResult CreateCheckoutSession([FromBody] CheckoutRequest request)
         {
@@ -64,26 +67,63 @@ namespace StripePayment.Controllers
 
             return Ok("pending");
         }
-        [HttpGet("payment-success")]
-        public ContentResult PaymentSuccess()
+        [HttpPost("webhook")]
+        public async Task<IActionResult> StripeWebhook()
         {
-            var html = @"
-<html>
-<head>
-    <meta charset='utf-8'>
-    <title>Payment Success</title>
-</head>
-<body>
-    <h1>Payment Success</h1>
-    <p>You can close this tab and comeback to your application</p>
-    <script>
-        setTimeout(function() {
-            window.close();
-        }, 2000);
-    </script>
-</body>
-</html>";
-            return Content(html, "text/html");
+            var json = await new StreamReader(HttpContext.Request.Body).ReadToEndAsync();
+
+            try
+            {
+                var stripeEvent = EventUtility.ConstructEvent(
+                    json,
+                    Request.Headers["Stripe-Signature"],
+                    SecretKeyManager.GetKey("StripeWebhookSecret")
+                );
+
+                if (stripeEvent.Type == "checkout.session.completed")
+                {
+                    var session = stripeEvent.Data.Object as Stripe.Checkout.Session;
+
+                    if (session != null)
+                    {
+                        Console.WriteLine($"✅ Payment success for session {session.Id}, amount: {session.AmountTotal / 100.0}");
+
+                        // 🔁 Call your own callback endpoint
+                        using var client = new HttpClient();
+                        var callback = new OrderCallbackModel
+                        {
+                            OrderId = session.Id,
+                            Amount = (double)(session.AmountTotal / 100.0),
+                            PaymentStatus = "success"
+                        };
+
+                        var jsonData = System.Text.Json.JsonSerializer.Serialize(callback);
+                        var content = new StringContent(jsonData, System.Text.Encoding.UTF8, "application/json");
+                        await client.PostAsync("https://localhost:7155/api/stripe/stripe-callback", content);
+                    }
+                }
+
+                return Ok();
+            }
+            catch (StripeException e)
+            {
+                Console.WriteLine($"❌ Webhook error: {e.Message}");
+                return BadRequest();
+            }
+        }
+
+
+        [HttpPost("stripe-callback")]
+        public IActionResult StripeCallback([FromBody] OrderCallbackModel model)
+        {
+            // Example model:
+            // { "orderId": "abc", "amount": 50, "paymentStatus": "success" }
+
+            // ✅ Insert order into your database
+            _orderService.CreateOrder(model.OrderId, model.Amount, model.PaymentStatus);
+
+            Console.WriteLine($"✅ Order {model.OrderId} saved after Stripe payment.");
+            return Ok(new { message = "Order recorded successfully" });
         }
 
 
@@ -93,6 +133,22 @@ namespace StripePayment.Controllers
             public string ItemName { get; set; }
             public decimal Price { get; set; }
         }
+        
+        public class OrderCallbackModel
+        {
+            public string OrderId { get; set; }
+            public double Amount { get; set; }
+            public string PaymentStatus { get; set; }
+        }
+        public class FakeOrderService
+        {
+            public void CreateOrder(string orderId, double amount, string paymentStatus)
+            {
+                Console.WriteLine($"💾 [FakeOrderService] Order saved: {orderId}, ${amount}, Status: {paymentStatus}");
+            }
+        }
 
     }
+
+
 }
